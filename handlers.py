@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from database import Debtor, SessionLocal
@@ -15,6 +15,11 @@ class AddDebt(StatesGroup):
     phone = State()
     amount = State()
 
+# Состояния для изменения суммы долга
+class ChangeDebt(StatesGroup):
+    increase_amount = State()
+    decrease_amount = State()
+
 # Обработчик команды /start
 @router.message(Command("start"))
 async def start(message: Message):
@@ -27,24 +32,26 @@ async def add_debt(message: Message, state: FSMContext):
     await message.answer("Введите имя должника:")
 
 # Обработчик состояния AddDebt.name
-@router.message(AddDebt.name)
+@router.message(StateFilter(AddDebt.name))
 async def enter_name(message: Message, state: FSMContext):
     await state.update_data(name=message.text)
     await state.set_state(AddDebt.phone)
     await message.answer("Введите номер телефона должника:")
 
 # Обработчик состояния AddDebt.phone
-@router.message(AddDebt.phone)
+@router.message(StateFilter(AddDebt.phone))
 async def enter_phone(message: Message, state: FSMContext):
     await state.update_data(phone=message.text)
     await state.set_state(AddDebt.amount)
     await message.answer("Введите сумму долга:")
 
 # Обработчик состояния AddDebt.amount
-@router.message(AddDebt.amount)
+@router.message(StateFilter(AddDebt.amount))
 async def enter_amount(message: Message, state: FSMContext):
     try:
         amount = int(message.text)
+        if amount < 0:
+            raise ValueError
     except ValueError:
         await message.answer("Пожалуйста, введите корректную сумму цифрами.")
         return
@@ -92,7 +99,7 @@ async def select_debtor(callback: CallbackQuery):
 async def increase_debt(callback: CallbackQuery, state: FSMContext):
     debtor_id = int(callback.data.split("_")[1])
     await state.update_data(debtor_id=debtor_id)
-    await state.set_state("enter_increase_amount")
+    await state.set_state(ChangeDebt.increase_amount)
     await callback.message.answer("Введите сумму, на которую нужно увеличить долг:")
     await callback.answer()
 
@@ -101,7 +108,7 @@ async def increase_debt(callback: CallbackQuery, state: FSMContext):
 async def decrease_debt(callback: CallbackQuery, state: FSMContext):
     debtor_id = int(callback.data.split("_")[1])
     await state.update_data(debtor_id=debtor_id)
-    await state.set_state("enter_decrease_amount")
+    await state.set_state(ChangeDebt.decrease_amount)
     await callback.message.answer("Введите сумму, на которую нужно уменьшить долг:")
     await callback.answer()
 
@@ -123,7 +130,7 @@ async def delete_debt(callback: CallbackQuery):
     await callback.answer()
 
 # Обработчик ввода суммы для увеличения долга
-@router.message(state="enter_increase_amount")
+@router.message(StateFilter(ChangeDebt.increase_amount))
 async def enter_increase_amount(message: Message, state: FSMContext):
     try:
         amount = int(message.text)
@@ -147,7 +154,7 @@ async def enter_increase_amount(message: Message, state: FSMContext):
     await state.clear()
 
 # Обработчик ввода суммы для уменьшения долга
-@router.message(state="enter_decrease_amount")
+@router.message(StateFilter(ChangeDebt.decrease_amount))
 async def enter_decrease_amount(message: Message, state: FSMContext):
     try:
         amount = int(message.text)
